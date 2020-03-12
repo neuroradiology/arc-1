@@ -1,6 +1,7 @@
 defmodule ArcTest.Processor do
   use ExUnit.Case, async: false
   @img "test/support/image.png"
+  @img2 "test/support/image two.png"
 
   defmodule DummyDefinition do
     use Arc.Actions.Store
@@ -11,6 +12,7 @@ defmodule ArcTest.Processor do
     def transform(:thumb, _), do: {:convert, "-strip -thumbnail 10x10"}
     def transform(:med, _), do: {:convert, fn(input, output) -> " #{input} -strip -thumbnail 10x10 #{output}" end, :jpg}
     def transform(:small, _), do: {:convert, fn(input, output) -> [input, "-strip", "-thumbnail", "10x10", output] end, :jpg}
+    def transform(:skipped, _), do: :skip
     def __versions, do: [:original, :thumb]
   end
 
@@ -33,6 +35,10 @@ defmodule ArcTest.Processor do
   test "returns the original path for :noaction transformations" do
     {:ok, file} = Arc.Processor.process(DummyDefinition, :original, {Arc.File.new(@img), nil})
     assert file.path == @img
+  end
+
+  test "returns nil for :skip transformations" do
+    assert {:ok, nil} = Arc.Processor.process(DummyDefinition, :skipped, {Arc.File.new(@img), nil})
   end
 
   test "transforms a copied version of file according to the specified transformation" do
@@ -64,6 +70,14 @@ defmodule ArcTest.Processor do
     {:ok, new_file} = Arc.Processor.process(DummyDefinition, :small, {Arc.File.new(%{binary: img_binary, filename: "image.png"}), nil})
     assert new_file.path != @img
     assert "128x128" == geometry(@img) #original file untouched
+    assert "10x10" == geometry(new_file.path)
+    cleanup(new_file.path)
+  end
+
+  test "file names with spaces" do
+    {:ok, new_file} = Arc.Processor.process(DummyDefinition, :thumb, {Arc.File.new(@img2), nil})
+    assert new_file.path != @img2
+    assert "128x128" == geometry(@img2) #original file untouched
     assert "10x10" == geometry(new_file.path)
     cleanup(new_file.path)
   end

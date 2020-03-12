@@ -1,6 +1,8 @@
 defmodule ArcTest.Storage.S3 do
   use ExUnit.Case, async: false
+
   @img "test/support/image.png"
+  @img_with_space "test/support/image two.png"
 
   defmodule DummyDefinition do
     use Arc.Definition
@@ -23,10 +25,28 @@ defmodule ArcTest.Storage.S3 do
     end
   end
 
+  defmodule DefinitionWithSkipped do
+    use Arc.Definition
+    @versions [:skipped]
+    @acl :public_read
+
+    def transform(:skipped, _), do: :skip
+  end
+
   defmodule DefinitionWithScope do
     use Arc.Definition
     @acl :public_read
     def storage_dir(_, {_, scope}), do: "uploads/with_scopes/#{scope.id}"
+  end
+
+  defmodule DefinitionWithBucket do
+    use Arc.Definition
+    def bucket, do: System.get_env("ARC_TEST_BUCKET")
+  end
+
+  defmodule DefinitionWithAssetHost do
+    use Arc.Definition
+    def asset_host, do: "https://example.com"
   end
 
   def env_bucket do
@@ -37,20 +57,23 @@ defmodule ArcTest.Storage.S3 do
     quote bind_quoted: [definition: definition, args: args] do
       :ok = definition.delete(args)
       signed_url = DummyDefinition.url(args, signed: true)
-      {:ok, {{_, code, msg}, _, _}} = :httpc.request(to_char_list(signed_url))
-      assert 404 == code
-      assert 'Not Found' == msg
+      {:ok, {{_, code, msg}, _, _}} = :httpc.request(to_charlist(signed_url))
+
+      # If buckets aren't configured to be public at bucket-level,
+      # deleted objects may return 403 Forbidden instead of 404 Not Found,
+      # even with a signed url
+      assert code in [403, 404]
     end
   end
 
   defmacro assert_header(definition, args, header, value) do
     quote bind_quoted: [definition: definition, args: args, header: header, value: value] do
       url = definition.url(args)
-      {:ok, {{_, 200, 'OK'}, headers, _}} = :httpc.request(to_char_list(url))
+      {:ok, {{_, 200, 'OK'}, headers, _}} = :httpc.request(to_charlist(url))
 
-      char_header = to_char_list(header)
+      char_header = to_charlist(header)
 
-      assert to_char_list(value) == Enum.find_value(headers, fn(
+      assert to_charlist(value) == Enum.find_value(headers, fn(
         {^char_header, value}) -> value
         _ -> nil
       end)
@@ -60,12 +83,12 @@ defmodule ArcTest.Storage.S3 do
   defmacro assert_private(definition, args) do
     quote bind_quoted: [definition: definition, args: args] do
       unsigned_url = definition.url(args)
-      {:ok, {{_, code, msg}, _, _}} = :httpc.request(to_char_list(unsigned_url))
+      {:ok, {{_, code, msg}, _, _}} = :httpc.request(to_charlist(unsigned_url))
       assert code == 403
       assert msg == 'Forbidden'
 
       signed_url = definition.url(args, signed: true)
-      {:ok, {{_, code, msg}, headers, _}} = :httpc.request(to_char_list(signed_url))
+      {:ok, {{_, code, msg}, headers, _}} = :httpc.request(to_charlist(signed_url))
       assert code == 200
       assert msg == 'OK'
     end
@@ -74,7 +97,7 @@ defmodule ArcTest.Storage.S3 do
   defmacro assert_public(definition, args) do
     quote bind_quoted: [definition: definition, args: args] do
       url = definition.url(args)
-      {:ok, {{_, code, msg}, headers, _}} = :httpc.request(to_char_list(url))
+      {:ok, {{_, code, msg}, headers, _}} = :httpc.request(to_charlist(url))
       assert code == 200
       assert msg == 'OK'
     end
@@ -83,7 +106,7 @@ defmodule ArcTest.Storage.S3 do
   defmacro assert_public_with_extension(definition, args, version, extension) do
     quote bind_quoted: [definition: definition, version: version, args: args, extension: extension] do
       url = definition.url(args, version)
-      {:ok, {{_, code, msg}, headers, _}} = :httpc.request(to_char_list(url))
+      {:ok, {{_, code, msg}, headers, _}} = :httpc.request(to_charlist(url))
       assert code == 200
       assert msg == 'OK'
       assert Path.extname(url) == extension
@@ -91,7 +114,7 @@ defmodule ArcTest.Storage.S3 do
   end
 
   setup_all do
-    Application.ensure_all_started(:httpoison)
+    Application.ensure_all_started(:hackney)
     Application.ensure_all_started(:ex_aws)
     Application.put_env :arc, :virtual_host, false
     Application.put_env :arc, :bucket, { :system, "ARC_TEST_BUCKET" }
@@ -102,14 +125,62 @@ defmodule ArcTest.Storage.S3 do
     # Application.put_env :ex_aws, :scheme, "https://"
   end
 
+  def with_env(app, key, value, fun) do
+    previous = Application.get_env(app, key, :nothing)
+
+    Application.put_env(app, key, value)
+    fun.()
+
+    case previous do
+      :nothing -> Application.delete_env(app, key)
+      _ -> Application.put_env(app, key, previous)
+    end
+  end
+
   @tag :s3
   @tag timeout: 15000
   test "virtual_host" do
-    Application.put_env :arc, :virtual_host, true
-    assert "https://#{env_bucket}.s3.amazonaws.com/arctest/uploads/image.png" == DummyDefinition.url(@img)
+    with_env :arc, :virtual_host, true, fn ->
+      assert "https://#{env_bucket()}.s3.amazonaws.com/arctest/uploads/image.png" == DummyDefinition.url(@img)
+    end
 
-    Application.put_env :arc, :virtual_host, false
-    assert "https://s3.amazonaws.com/#{env_bucket}/arctest/uploads/image.png" == DummyDefinition.url(@img)
+    with_env :arc, :virtual_host, false, fn ->
+      assert "https://s3.amazonaws.com/#{env_bucket()}/arctest/uploads/image.png" == DummyDefinition.url(@img)
+    end
+  end
+
+  @tag :s3
+  @tag timeout: 15000
+  test "custom asset_host" do
+    custom_asset_host = "https://some.cloudfront.com"
+
+    with_env :arc, :asset_host, custom_asset_host, fn ->
+      assert "#{custom_asset_host}/arctest/uploads/image.png" == DummyDefinition.url(@img)
+    end
+
+    with_env :arc, :asset_host, {:system, "ARC_ASSET_HOST"}, fn ->
+      System.put_env("ARC_ASSET_HOST", custom_asset_host)
+      assert "#{custom_asset_host}/arctest/uploads/image.png" == DummyDefinition.url(@img)
+    end
+
+    with_env :arc, :asset_host, false, fn ->
+      assert "https://s3.amazonaws.com/#{env_bucket()}/arctest/uploads/image.png" == DummyDefinition.url(@img)
+    end
+  end
+
+  @tag :s3
+  @tag timeout: 150000
+  test "custom asset_host in definition" do
+    custom_asset_host = "https://example.com"
+
+    assert "#{custom_asset_host}/uploads/image.png" == DefinitionWithAssetHost.url(@img)
+  end
+
+  @tag :s3
+  @tag timeout: 15000
+  test "encoded url" do
+    url = DummyDefinition.url(@img_with_space)
+    assert "https://s3.amazonaws.com/#{env_bucket()}/arctest/uploads/image%20two.png" == url
   end
 
   @tag :s3
@@ -150,9 +221,18 @@ defmodule ArcTest.Storage.S3 do
   test "delete with scope" do
     scope = %{id: 1}
     {:ok, path} = DefinitionWithScope.store({"test/support/image.png", scope})
-    assert "https://s3.amazonaws.com/#{env_bucket}/uploads/with_scopes/1/image.png" == DefinitionWithScope.url({path, scope})
+    assert "https://s3.amazonaws.com/#{env_bucket()}/uploads/with_scopes/1/image.png" == DefinitionWithScope.url({path, scope})
     assert_public(DefinitionWithScope, {path, scope})
     delete_and_assert_not_found(DefinitionWithScope, {path, scope})
+  end
+
+  @tag :s3
+  @tag timeout: 150000
+  test "with bucket" do
+    url = "https://s3.amazonaws.com/#{env_bucket()}/uploads/image.png"
+    assert url == DefinitionWithBucket.url("test/support/image.png")
+    assert {:ok, "image.png"} == DefinitionWithBucket.store("test/support/image.png")
+    delete_and_assert_not_found(DefinitionWithBucket, "test/support/image.png")
   end
 
   @tag :s3
@@ -160,7 +240,7 @@ defmodule ArcTest.Storage.S3 do
   test "put with error" do
     Application.put_env(:arc, :bucket, "unknown-bucket")
     {:error, res} = DummyDefinition.store("test/support/image.png")
-    Application.put_env :arc, :bucket, env_bucket
+    Application.put_env :arc, :bucket, env_bucket()
     assert res
   end
 
@@ -170,5 +250,11 @@ defmodule ArcTest.Storage.S3 do
     assert {:ok, "image.png"} == DefinitionWithThumbnail.store(@img)
     assert_public_with_extension(DefinitionWithThumbnail, "image.png", :thumb, ".jpg")
     delete_and_assert_not_found(DefinitionWithThumbnail, "image.png")
+  end
+
+  @tag :s3
+  @tag timeout: 150000
+  test "url for a skipped version" do
+    assert nil == DefinitionWithSkipped.url("image.png")
   end
 end

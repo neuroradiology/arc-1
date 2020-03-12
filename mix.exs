@@ -1,17 +1,17 @@
 defmodule Arc.Mixfile do
   use Mix.Project
 
-  @version "0.6.0-rc1"
+  @version "0.10.0"
 
   def project do
     [app: :arc,
      version: @version,
-     elixir: "~> 1.0",
-     deps: deps,
+     elixir: "~> 1.4",
+     deps: deps(),
 
     # Hex
-     description: description,
-     package: package]
+     description: description(),
+     package: package()]
   end
 
   defp description do
@@ -30,24 +30,30 @@ defmodule Arc.Mixfile do
   def application do
     [
       applications: [
-        :logger
+        :logger,
+        :hackney,
       ] ++ applications(Mix.env)
     ]
   end
 
-  def applications(:test), do: [:ex_aws, :poison, :hackney]
+  def applications(:test), do: [:ex_aws, :ex_aws_s3, :poison]
   def applications(_), do: []
 
   defp deps do
     [
-      {:ex_aws, "~> 1.0.0-rc.1", optional: true},
-      {:mock, "~> 0.1.1", only: :test},
-      {:ex_doc, "~> 0.14", only: :dev},
+      {:hackney, "~> 1.0"},
 
-      # If using Amazon S3:
-      {:hackney, "~> 1.5", optional: true},
-      {:poison, "~> 2.0", optional: true},
-      {:sweet_xml, "~> 0.5", optional: true}
+      # If using Amazon S3
+      {:ex_aws, "~> 2.0", optional: true},
+      {:ex_aws_s3, "~> 2.0", optional: true},
+      {:poison, "~> 2.2 or ~> 3.1", optional: true},
+      {:sweet_xml, "~> 0.6", optional: true},
+
+      # Test
+      {:mock, "~> 0.1", only: :test},
+
+      # Dev
+      {:ex_doc, "~> 0.14", only: :dev}
     ]
   end
 end

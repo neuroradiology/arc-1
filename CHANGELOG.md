@@ -1,5 +1,50 @@
 # Changelog
 
+## v0.11.0 (2018-10-04)
+  * (Dependency) `:httpoison` removed in favor of `:hackney`
+  * (Enhancement) Proper generator file location for Phoenix 1.3+
+  * (Enhancement) Support setting asset_host to `false` in the app config to revert to the default
+  * (Enhancement) Allow overriding asset_host in an individual definition module
+  * (Enhancement) Definitions can conditionally skip a version or transformation
+
+## v0.10.0 (2018-06-19)
+  * (Dependency) `:ex_aws` increased to `~> 2.0`
+  * (Dependency) `:ex_aws_s3` added at `~> 2.0`
+
+## v0.9.0 (2018-06-19)
+  * (Enhancement) Allow overriding the destination bucket in an upload definition. See (https://github.com/stavro/arc/pull/206)
+  * (Enhancement) Allow overriding the `storage_dir` via configuration
+  * (Enhancement) Skip uploading all files if any of the versions fail (PR: https://github.com/stavro/arc/pull/218)
+
+## v0.8.0 (2017-04-20)
+  * (Enhancement) Fix elixir warnings.
+  * (Enhancement) Allow delete/1 to be overridden.
+  * (Enhancement) Deletions follow same async behavior as uploads.
+  * (Minor Breaking Change) URL encode returned urls.  If you were explicitly encoding them yourself, you don't need to do this anymore.
+
+## v0.7.0 (2017-02-07)
+  * Require Elixir v1.4
+  * Relax package dependencies
+  * Fix Elixir v1.4 warnings
+  * (Enhancement) Disable asynchronous processing via module attribute `@async false`.
+  * (Enhancement) Add retry functionality to remote path uploader
+
+> v0.7.0 Requires Elixir 1.4 or above, due to enhancements made with ExAws and Task Streaming
+
+## v0.6.0 (2016-12-19)
+  * (Enhancement) Allow asset host to be set via an environment variable
+  * (Enhancement) Allow downloading and saving remote files
+  * (Enhancement) Move Arc storage module to config
+  * (Bugfix) Split conversion arguments correctly when a file name has a space in it
+  * (Bugfix) S3 object headers must be transferred to ExAws as a keyword list, not a map
+  * (Bugfix) Don't prepend a forward-slash to local storage urls if the url already starts with a forward-slash.
+
+## v0.6.0-rc3 (2016-10-20)
+  * (Dependencies) - Upgrade `ex_aws` to rc3
+
+## v0.6.0-rc2 (2016-10-20)
+  * (Dependencies) - Upgrade `ex_aws` to rc2
+
 ## v0.6.0-rc1 (2016-10-04)
   * (Dependencies) - Removed `httpoison` as an optional dependency, added `sweet_xml` and `hackney` as optional dependencies (required if using S3).
   * (Enhancement) File streaming to S3 - Allows the uploading of large files to S3 without reading to memory first.
